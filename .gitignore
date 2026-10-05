@@ -1,0 +1,17 @@
+data/*.csv
+data/*.zip
+submissions/*.csv
+__pycache__/
+.venv/
+venv/
+.ipynb_checkpoints/
+report/*.aux
+report/*.log
+report/*.out
+report/*.bbl
+report/*.blg
+report/*.synctex.gz
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
