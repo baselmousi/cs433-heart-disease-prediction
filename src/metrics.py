@@ -1,1 +1,1 @@
-""" Code for computing metrics for CS-433 Project 1 """
+"""Code for computing metrics for CS-433 Project 1"""
