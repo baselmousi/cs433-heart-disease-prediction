@@ -1,5 +1,6 @@
 data/*.csv
 data/*.zip
+data/*.pdf
 submissions/*.csv
 __pycache__/
 .venv/
