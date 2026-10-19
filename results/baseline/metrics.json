@@ -1,0 +1,257 @@
+{
+  "numpy_version": "1.26.4",
+  "features": [
+    "GENHLTH",
+    "PHYSHLTH",
+    "_SMOKER3",
+    "_BMI5",
+    "_AGE80"
+  ],
+  "model_columns": [
+    "intercept",
+    "GENHLTH_very_good",
+    "GENHLTH_good",
+    "GENHLTH_fair",
+    "GENHLTH_poor",
+    "GENHLTH_no_rating",
+    "SMOKER_daily",
+    "SMOKER_some_days",
+    "SMOKER_former",
+    "SMOKER_unknown",
+    "PHYSHLTH_days_scaled",
+    "BMI_scaled",
+    "AGE80_scaled",
+    "PHYSHLTH_days_missing",
+    "BMI_missing"
+  ],
+  "seed": 42,
+  "validation_fraction": 0.2,
+  "training_rows": 262508,
+  "validation_rows": 65627,
+  "training_positive_count": 23180,
+  "validation_positive_count": 5795,
+  "threshold": 0.5,
+  "optimization": {
+    "algorithm": "unregularized logistic regression, full-batch gradient descent",
+    "initial_weights": "zeros",
+    "gamma": 2.960030428300081,
+    "max_iterations": 10000,
+    "iterations": 5500,
+    "gradient_tolerance": 1e-05,
+    "check_every": 250,
+    "converged": true,
+    "history": [
+      {
+        "iteration": 0,
+        "loss": 0.6931471805599448,
+        "gradient_max_abs": 0.41169792920596704
+      },
+      {
+        "iteration": 250,
+        "loss": 0.2444952577114453,
+        "gradient_max_abs": 0.0009256605265924417
+      },
+      {
+        "iteration": 500,
+        "loss": 0.24330994535269057,
+        "gradient_max_abs": 0.0004111270481860815
+      },
+      {
+        "iteration": 750,
+        "loss": 0.24300777306698115,
+        "gradient_max_abs": 0.00021946641242837582
+      },
+      {
+        "iteration": 1000,
+        "loss": 0.24289409886608185,
+        "gradient_max_abs": 0.00020952988834936596
+      },
+      {
+        "iteration": 1250,
+        "loss": 0.2428367854273297,
+        "gradient_max_abs": 0.00019266626185126504
+      },
+      {
+        "iteration": 1500,
+        "loss": 0.24280152634133723,
+        "gradient_max_abs": 0.00017263139848122924
+      },
+      {
+        "iteration": 1750,
+        "loss": 0.24277751035850761,
+        "gradient_max_abs": 0.00015162920237316173
+      },
+      {
+        "iteration": 2000,
+        "loss": 0.24276052002416795,
+        "gradient_max_abs": 0.0001310751975080316
+      },
+      {
+        "iteration": 2250,
+        "loss": 0.2427484169455566,
+        "gradient_max_abs": 0.00011185925399711154
+      },
+      {
+        "iteration": 2500,
+        "loss": 0.2427398423458744,
+        "gradient_max_abs": 9.448052410527387e-05
+      },
+      {
+        "iteration": 2750,
+        "loss": 0.2427338235600264,
+        "gradient_max_abs": 7.915052380050102e-05
+      },
+      {
+        "iteration": 3000,
+        "loss": 0.2427296388908132,
+        "gradient_max_abs": 6.588219484327956e-05
+      },
+      {
+        "iteration": 3250,
+        "loss": 0.24272675417175174,
+        "gradient_max_abs": 5.456372081832097e-05
+      },
+      {
+        "iteration": 3500,
+        "loss": 0.24272477987520594,
+        "gradient_max_abs": 4.501489447907584e-05
+      },
+      {
+        "iteration": 3750,
+        "loss": 0.24272343665776216,
+        "gradient_max_abs": 3.702666558620315e-05
+      },
+      {
+        "iteration": 4000,
+        "loss": 0.2427225271806969,
+        "gradient_max_abs": 3.0386634829667225e-05
+      },
+      {
+        "iteration": 4250,
+        "loss": 0.24272191376819494,
+        "gradient_max_abs": 2.4893987394446598e-05
+      },
+      {
+        "iteration": 4500,
+        "loss": 0.24272150133180556,
+        "gradient_max_abs": 2.036712327500162e-05
+      },
+      {
+        "iteration": 4750,
+        "loss": 0.24272122472138272,
+        "gradient_max_abs": 1.6646587296848943e-05
+      },
+      {
+        "iteration": 5000,
+        "loss": 0.24272103958209082,
+        "gradient_max_abs": 1.3595185785081529e-05
+      },
+      {
+        "iteration": 5250,
+        "loss": 0.24272091586878689,
+        "gradient_max_abs": 1.1096564408086769e-05
+      },
+      {
+        "iteration": 5500,
+        "loss": 0.2427208333110514,
+        "gradient_max_abs": 9.053059357515557e-06
+      }
+    ]
+  },
+  "preprocessing": {
+    "medians": [
+      0.0,
+      26.91,
+      58.0
+    ],
+    "means": [
+      4.169385313971384,
+      27.934388628163244,
+      55.34235147119326
+    ],
+    "scales": [
+      8.706471126136769,
+      6.394744770987849,
+      17.036871480453257
+    ],
+    "keep_missing": [
+      true,
+      true,
+      false
+    ]
+  },
+  "weights": [
+    -4.173309302093553,
+    0.5394888753482415,
+    1.1987873018256188,
+    1.8650556291860731,
+    2.392703868361088,
+    1.5363329916385065,
+    0.5533527426013126,
+    0.564025967000318,
+    0.47442160556376817,
+    0.2612507735503302,
+    0.08402927461277858,
+    0.12607748098126023,
+    1.0279489248574492,
+    0.042047907171298915,
+    -0.2697717939929072
+  ],
+  "training": {
+    "accuracy": 0.9113246072500648,
+    "precision": 0.4745057232049948,
+    "recall": 0.03934426229508197,
+    "f1": 0.07266353278623218,
+    "confusion_matrix": [
+      [
+        238318,
+        1010
+      ],
+      [
+        22268,
+        912
+      ]
+    ],
+    "predicted_positive_count": 1922,
+    "log_loss": 0.2427208333110514
+  },
+  "validation": {
+    "accuracy": 0.910905572401603,
+    "precision": 0.44715447154471544,
+    "recall": 0.03796376186367558,
+    "f1": 0.06998568474630189,
+    "confusion_matrix": [
+      [
+        59560,
+        272
+      ],
+      [
+        5575,
+        220
+      ]
+    ],
+    "predicted_positive_count": 492,
+    "log_loss": 0.24267511190456284
+  },
+  "majority_class": 0,
+  "majority_validation": {
+    "accuracy": 0.911697929205967,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "confusion_matrix": [
+      [
+        59832,
+        0
+      ],
+      [
+        5795,
+        0
+      ]
+    ],
+    "predicted_positive_count": 0
+  },
+  "metric_convention": "0/1 labels; confusion rows actual [0,1], columns predicted [0,1]; undefined precision/recall/F1=0",
+  "evaluation_note": "Fixed initial baseline; no validation threshold tuning. Earlier exploration had viewed the full labeled data.",
+  "elapsed_seconds": 46.97695516701788
+}
