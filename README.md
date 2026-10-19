@@ -55,6 +55,24 @@ its high accuracy. Training and validation log losses are 0.242721 and 0.242675.
 No threshold search or class weighting has been performed. See `metrics.json`
 for the full settings, convergence history, and confusion matrix.
 
+## Evaluation with the JD preprocessing matrix
+
+To evaluate logistic regression using the preprocessing pipeline in
+`src/preprocessing_jd.py`, run from the repository root:
+
+```bash
+python train_preprocessed_jd.py
+```
+
+The script evaluates every completed matrix returned by the preprocessing
+function, prints accuracy, precision, recall, and F1 on the stratified
+validation split, and writes
+`results/preprocessed_jd/preprocessed_jd_metrics.json`. It also reports the
+mean and standard deviation across the completed matrices. Because the current
+preprocessing function runs before the holdout split, these validation metrics
+may be optimistic: its imputation and category encoding can see validation
+rows.
+
 To reuse the saved model, load it with `np.load(..., allow_pickle=False)`, pass the
 five raw columns in its recorded order to `src.preprocessing.transform_baseline_features`
 with the saved `medians`, `means`, `scales`, and `keep_missing`, then apply the

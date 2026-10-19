@@ -19,8 +19,8 @@ cat_variables_selected = ["SEX", "GENHLTH", "EMPLOY1", "BPHIGH4", "DIFFWALK", "C
 
 # These variables may need to be excluded given that they may be correlated with the consequences of the disease, 
 # so not predictive of the disease itself. For example, DIFFWALK and CVDSTRK3 may be consequences of heart disease rather than predictors.
-var_to_exclude_mb = ["DIFFWALK", "CVDSTRK3", "USEEQUIP", "CHCCOPD1", "_LMTSCL1", "QLACTLM2", "PNEUVAC3", "_LMTACT1", "_LMTWRK1", "_DRDXAR1", 
-                    , "DIFFALON", "CHCKIDNY", "DIFFDRES"]
+var_to_exclude_mb = ["DIFFWALK", "CVDSTRK3", "USEEQUIP", "CHCCOPD1", "_LMTSCL1", "QLACTLM2", "PNEUVAC3", "_LMTACT1", "_LMTWRK1", "_DRDXAR1",
+                      "DIFFALON", "CHCKIDNY", "DIFFDRES"]
 
 #Only necessary for numerical variables as categorical variables will simply have additional class and the fact that the missingness is probably not at random
 name_missing_code_map = {"_AGE80": [None], "FC60_" : [99900], "PHYSHLTH":[77, 99], "_DRNKWEK":[99900], "_BMI5":[None], "PAVIG11_":[None],  "GRENDAY_":[None],
@@ -68,10 +68,7 @@ def sub_set_columns(X, name_col_map, num_names, cat_names):
     
     num_idx=list(num_name_idx_map.values())
     cat_idx=list(cat_name_idx_map.values())
-
-    name_idx_map = {**num_name_idx_map, **cat_name_idx_map}
-    idx_name_map = {v: k for k, v in name_idx_map.items()}
-    return X[:, num_idx0 + cat_idx0], name_idx_map, idx_name_map, num_idx, cat_idx, num_idx0, cat_idx0, cat_name_idx_map, num_name_idx_map
+    return X[:, num_idx0 + cat_idx0], num_idx, cat_idx, num_idx0, cat_idx0, cat_name_idx_map, num_name_idx_map
 
 def replace_missing_codes(X, name_missing_code_map, name_col_map):
     for name,codes in name_missing_code_map.items():
@@ -238,7 +235,7 @@ def _chain_train_test(
 
     n_total, d = X.shape
     train_rows = np.arange(n_train)
-    test_rows = np.arange(n_train, n_total)
+    #test_rows = np.arange(n_train, n_total)
 
     missing = np.isnan(X)
 
@@ -455,7 +452,7 @@ def mice_train_test(
 #--------------------------------
 
 def one_hot_encode_X(Xi, i, num_idx, cat_dict, num_dict, name_col_map_X):
-    X1 = [np.ones_like(Xi[:,0]), Xi[:, num_idx]]
+    X1 = [np.ones((Xi.shape[0], 1)), Xi[:, num_idx]]
     if i==0:
         n = X1[1].shape[1] + 1
         num_dict = {n:j+1 for n,j in num_dict.items()}
@@ -472,20 +469,64 @@ def one_hot_encode_X(Xi, i, num_idx, cat_dict, num_dict, name_col_map_X):
         if i == 0:
             for value in values:
                 feature_name = f"{name}_{value}"
-                name_column_mapping_X[feature_name] = n
+                name_col_map_X[feature_name] = n
                 n += 1
     if i == 0:
-        name_column_mapping_X = {**num_dict, **name_column_mapping_X}
+        name_col_map_X = {**num_dict, **name_col_map_X}
     return np.hstack(X1)
+
+def normalize_numeric_features(X_train, X_other, num_idx):
+    """Standardize numeric columns using training statistics only."""
+    X_train = X_train.copy()
+    X_other = X_other.copy()
+
+    means = X_train[:, num_idx].mean(axis=0)
+    scales = X_train[:, num_idx].std(axis=0)
+    scales = np.maximum(scales, 1e-12)
+
+    X_train[:, num_idx] = (
+        X_train[:, num_idx] - means
+    ) / scales
+
+    X_other[:, num_idx] = (
+        X_other[:, num_idx] - means
+    ) / scales
+
+    return X_train, X_other
+
 
 #--------------------------------
 # Main function to preprocess the data
 #--------------------------------
 
-def preprocessing(data_dir, num_variables_selected, cat_variables_selected, name_missing_code_map, name_code_to_replace_map):
+def preprocessing(
+    data_dir,
+    num_variables_selected,
+    cat_variables_selected,
+    name_missing_code_map,
+    name_code_to_replace_map,
+    validation_fraction=0.0,
+    validation_seed=42,
+):
+    """Preprocess training data, optionally using a leakage-free holdout.
+
+    With the default ``validation_fraction=0.0``, the original four-value
+    return value is preserved: processed training matrices, processed test
+    matrices, labels, and feature-name mapping.
+
+    When ``validation_fraction`` is positive, the labeled training rows are
+    split before MICE is fitted. The function returns processed training
+    matrices, processed validation matrices, training labels, validation
+    labels, and the feature-name mapping. MICE and category levels are then
+    learned from the training rows only.
+    """
+    if not 0 <= validation_fraction < 1:
+        raise ValueError("validation_fraction must be between 0 and 1.")
+
     print("Loading data...")
     start = timeit.default_timer()
     x_train, x_test, y_train, name_col_map = load_data(data_dir)
+    y_train = y_train ==1
     t0 = timeit.default_timer()
     print(f"Data loaded in {t0 - start:.2f} seconds.")
     print("Encoding missing values and replacing codes...")
@@ -496,12 +537,143 @@ def preprocessing(data_dir, num_variables_selected, cat_variables_selected, name
     t1 = timeit.default_timer()
     print(f"Missing values encoded and codes replaced in {t1 - t0:.2f} seconds.")
     print("Extracting selected columns...")
-    X_tr_raw, name_idx_map, idx_name_map, num_idx, cat_idx, num_idx0, cat_idx0, cat_name_idx_map, num_name_idx_map = sub_set_columns(x_train, name_col_map, num_variables_selected, cat_variables_selected)
+    X_tr_raw, num_idx, cat_idx, num_idx0, cat_idx0, cat_name_idx_map, num_name_idx_map = sub_set_columns(x_train, name_col_map, num_variables_selected, cat_variables_selected)
+    X_te_raw = x_test[:, num_idx0 + cat_idx0]
+    t2 = timeit.default_timer()
+    print(f"Selected columns extracted in {t2 - t1:.2f} seconds.")
+
+    if validation_fraction > 0:
+        rng = np.random.default_rng(validation_seed)
+        train_indices = []
+        validation_indices = []
+        for label in np.unique(y_train):
+            indices = rng.permutation(np.flatnonzero(y_train == label))
+            n_validation = int(round(validation_fraction * len(indices)))
+            if not 0 < n_validation < len(indices):
+                raise ValueError(
+                    "Each class needs examples in both training and validation."
+                )
+            validation_indices.append(indices[:n_validation])
+            train_indices.append(indices[n_validation:])
+        train_indices = rng.permutation(np.concatenate(train_indices))
+        validation_indices = rng.permutation(np.concatenate(validation_indices))
+        X_fit_raw = X_tr_raw[train_indices]
+        X_validation_raw = X_tr_raw[validation_indices]
+        y_fit = y_train[train_indices]
+        y_validation = y_train[validation_indices]
+        mice_test_raw = X_validation_raw
+    else:
+        X_fit_raw = X_tr_raw
+        y_fit = y_train
+        mice_test_raw = X_te_raw
+
+    print("Performing MICE imputation...")
+    completed, completed_test = mice_train_test(
+        X_fit_raw,
+        mice_test_raw,
+        num_idx,
+        cat_idx,
+        m=2,
+        n_iter=5,
+        seed=67,
+        max_fit_rows=75000,
+    )
+    t3 = timeit.default_timer()
+    print(f"MICE imputation completed in {t3 - t2:.2f} seconds.")
+
+    normalized_completed = []
+    normalized_completed_test = []
+
+    for train_matrix, other_matrix in zip(completed, completed_test):
+        train_matrix, other_matrix = normalize_numeric_features(
+            train_matrix,
+            other_matrix,
+            num_idx,
+        )
+        normalized_completed.append(train_matrix)
+        normalized_completed_test.append(other_matrix)
+
+    completed = normalized_completed
+    completed_test = normalized_completed_test
+
+    
+    print("One-hot encoding completed datasets...")
+    name_column_mapping_X = {"Intercept":0}
+    X1_tr = [
+        one_hot_encode_X(
+            Xi, i, num_idx, cat_name_idx_map, num_name_idx_map, name_column_mapping_X
+        )
+        for i, Xi in enumerate(completed)
+    ]
+
+    if validation_fraction > 0:
+        # Validation categories must use the training category levels and
+        # therefore the same columns, even if a level is absent in validation.
+        category_levels = {
+            j: np.unique(completed[0][:, j]) for j in cat_name_idx_map.values()
+        }
+
+        def encode_with_training_levels(Xi):
+            parts = [np.ones((Xi.shape[0], 1)), Xi[:, num_idx]]
+            for j in cat_name_idx_map.values():
+                values = category_levels[j]
+                encoded = np.zeros((Xi.shape[0], len(values)))
+                positions = np.searchsorted(values, Xi[:, j])
+                valid = (
+                    (positions < len(values))
+                    & (values[np.minimum(positions, len(values) - 1)] == Xi[:, j])
+                )
+                if not np.all(valid):
+                    raise ValueError(
+                        "Validation contains a categorical level absent from training."
+                    )
+                encoded[np.arange(Xi.shape[0]), positions] = 1.0
+                parts.append(encoded)
+            return np.hstack(parts)
+
+        X1_validation = [encode_with_training_levels(Xi) for Xi in completed_test]
+        t4 = timeit.default_timer()
+        print(f"One-hot encoding completed in {t4 - t3:.2f} seconds.")
+        print(f"Total preprocessing time: {t4 - start:.2f} seconds.")
+        return X1_tr, X1_validation, y_fit, y_validation, name_column_mapping_X
+
+    X1_te = [
+        one_hot_encode_X(
+            Xi,
+            i + 1,
+            num_idx,
+            cat_name_idx_map,
+            num_name_idx_map,
+            name_column_mapping_X,
+        )
+        for i, Xi in enumerate(completed_test)
+    ]
+    t4 = timeit.default_timer()
+    print(f"One-hot encoding completed in {t4 - t3:.2f} seconds.")
+    print(f"Total preprocessing time: {t4 - start:.2f} seconds.")
+    return X1_tr, X1_te, y_fit, name_column_mapping_X
+
+def preprocessing0(data_dir, num_variables_selected, cat_variables_selected, name_missing_code_map, name_code_to_replace_map):
+    print("Loading data...")
+    start = timeit.default_timer()
+    x_train, x_test, y_train, name_col_map = load_data(data_dir)
+    y_train = y_train ==1
+    t0 = timeit.default_timer()
+    print(f"Data loaded in {t0 - start:.2f} seconds.")
+    print("Encoding missing values and replacing codes...")
+    x_train = replace_missing_codes(x_train, name_missing_code_map, name_col_map)
+    x_train = replace_codes(x_train, name_code_to_replace_map, name_col_map)
+    x_test = replace_missing_codes(x_test, name_missing_code_map, name_col_map)
+    x_test = replace_codes(x_test, name_code_to_replace_map, name_col_map)
+    t1 = timeit.default_timer()
+    print(f"Missing values encoded and codes replaced in {t1 - t0:.2f} seconds.")
+    print("Extracting selected columns...")
+    X_tr_raw, num_idx, cat_idx, num_idx0, cat_idx0, cat_name_idx_map, num_name_idx_map = sub_set_columns(x_train, name_col_map, num_variables_selected, cat_variables_selected)
     X_te_raw = x_test[:, num_idx0 + cat_idx0]
     t2 = timeit.default_timer()
     print(f"Selected columns extracted in {t2 - t1:.2f} seconds.")
     print("Performing MICE imputation...")
-    completed, completed_test = mice_train_test(X_tr_raw, X_te_raw, num_idx, cat_idx, m=2, n_iter=5, seed=67, max_fit_rows=75000)
+    completed, completed_test = mice_train_test(X_tr_raw, X_te_raw, num_idx, cat_idx, m=10, n_iter=5, seed=67, max_fit_rows=75000)
     t3 = timeit.default_timer()
     print(f"MICE imputation completed in {t3 - t2:.2f} seconds.")
     print("One-hot encoding completed datasets...")
