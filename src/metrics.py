@@ -40,3 +40,23 @@ def classification_metrics(y_true, y_pred):
         "confusion_matrix": [[tn, fp], [fn, tp]],
         "predicted_positive_count": tp + fp,
     }
+
+
+THRESHOLDS = np.round(np.arange(0.05, 0.605, 0.01), 2)
+
+
+def best_threshold(y_true, probabilities, thresholds=THRESHOLDS):
+    """Return the probability cutoff with the highest F1, and that F1.
+
+    Ties go to the lowest cutoff. Tune it on out-of-fold probabilities, so that
+    the cutoff is not fitted to the model's own training rows.
+    """
+    probabilities, thresholds = np.asarray(probabilities), np.asarray(thresholds)
+    if thresholds.ndim != 1 or not len(thresholds):
+        raise ValueError("Expected a nonempty 1D array of thresholds.")
+    scores = [
+        classification_metrics(y_true, probabilities >= t)["f1"] for t in thresholds
+    ]
+    best = int(np.argmax(scores))
+    return float(thresholds[best]), scores[best]
+
