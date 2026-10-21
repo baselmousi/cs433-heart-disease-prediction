@@ -1,0 +1,9 @@
+date,owner,experiment,git_commit,model,params,preprocessing,columns,threshold,f1_mean,f1_std,f1_pooled,precision,recall,accuracy,seconds,aicrowd_f1
+2026-10-21 15:32,Basel Mousi,E0-majority,193d6cd,majority,{},{},200,0.05,0.0,0.0,0.0,0.0,0.0,0.9117,9,
+2026-10-21 15:33,Basel Mousi,E1-logistic,193d6cd,logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200}",{},200,0.2,0.4274,0.0028,0.4274,0.3534,0.5406,0.8721,32,
+2026-10-21 15:33,Basel Mousi,E1-least-squares,193d6cd,linear,{},{},200,0.2,0.4137,0.0022,0.4137,0.3224,0.5772,0.8555,10,
+2026-10-21 15:33,Basel Mousi,E1-ridge,193d6cd,linear,{'lambda_': 0.0001},{},200,0.2,0.4137,0.0022,0.4136,0.3224,0.577,0.8555,10,
+2026-10-21 15:34,Basel Mousi,E3-indicators,193d6cd,logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200}",{'indicators': True},239,0.2,0.427,0.0023,0.427,0.353,0.5402,0.872,41,
+2026-10-21 15:34,Basel Mousi,E3-max-nan-0.5,193d6cd,logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200}",{'max_nan': 0.5},157,0.19,0.4258,0.0036,0.4258,0.3438,0.5591,0.8668,27,
+2026-10-21 15:35,Basel Mousi,E4-ordinal-onehot,193d6cd,logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200}",{'ordinal_onehot': True},225,0.2,0.4273,0.0031,0.4273,0.3522,0.543,0.8715,37,
+2026-10-21 15:35,Basel Mousi,E9-leaky,193d6cd,logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200}",{'leaky': True},215,0.2,0.4373,0.0032,0.4372,0.3639,0.5476,0.8755,36,
