@@ -6,6 +6,7 @@ out-of-fold probabilities. Run from the repository root:
 
     python run_cv.py --list                  # show the experiments
     python run_cv.py E1-logistic E9-leaky    # run some of them
+    python run_cv.py E1-logistic --seed 43   # other folds, logged as E1-logistic-seed43
 """
 
 import argparse
@@ -113,6 +114,31 @@ EXPERIMENTS = {
     ),
 }
 
+# E7: tune logistic regression one setting at a time, each against E1-logistic.
+for iters in (500, 1000, 2000):
+    EXPERIMENTS[f"E7-iters-{iters}"] = (
+        f"{iters} gradient steps instead of 200",
+        "logistic",
+        {**BASE, "max_iters": iters},
+        {},
+    )
+# 200 steps already reach the F1 plateau, but stop short of the optimum for a given
+# lambda; 1000 steps let small lambdas show their effect.
+for lambda_ in (1e-6, 1e-5, 1e-3, 1e-2, 1e-1):
+    EXPERIMENTS[f"E7-lambda-{lambda_:g}"] = (
+        f"lambda {lambda_:g} instead of 1e-4, 1000 steps",
+        "logistic",
+        {**BASE, "lambda_": lambda_, "max_iters": 1000},
+        {},
+    )
+for gamma in (0.5, 2.0):
+    EXPERIMENTS[f"E7-gamma-{gamma:g}"] = (
+        f"step size {gamma:g} instead of 1",
+        "logistic",
+        {**BASE, "gamma": gamma},
+        {},
+    )
+
 
 def git_commit():
     """Short hash of HEAD, marked -dirty if tracked files have uncommitted changes."""
@@ -129,19 +155,24 @@ def git_commit():
         return "unknown"
 
 
-def run_experiment(name, x, labels, feature_names):
+def run_name(name, seed):
+    """Name in the log and the out-of-fold file; seed 42 keeps the plain name."""
+    return name if seed == 42 else f"{name}-seed{seed}"
+
+
+def run_experiment(name, x, labels, feature_names, seed=42):
     """Cross-validate one named experiment and return its results.csv row and
     out-of-fold probabilities."""
     _, model, params, options = EXPERIMENTS[name]
     start = time.perf_counter()
     result = cross_validate(
-        x, labels, feature_names, MODELS[model](**params), **options
+        x, labels, feature_names, MODELS[model](**params), seed=seed, **options
     )
     y = (np.asarray(labels) == 1).astype(float)
     pooled = classification_metrics(y, result["probabilities"] >= result["threshold"])
     row = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "experiment": name,
+        "experiment": run_name(name, seed),
         "model": model,
         "params": repr(params),
         "preprocessing": repr(options),
@@ -181,6 +212,7 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
     parser.add_argument("--log", type=Path, default=ROOT / "results" / "results.csv")
     parser.add_argument("--owner", default=None, help="defaults to git user.name")
+    parser.add_argument("--seed", type=int, default=42, help="seed of the folds")
     args = parser.parse_args()
 
     if args.list or not args.experiments:
@@ -207,14 +239,17 @@ def main():
     commit = git_commit()
 
     for name in args.experiments:
-        print(f"Running {name}...", flush=True)
-        row, probabilities = run_experiment(name, x, labels, feature_names)
+        print(f"Running {run_name(name, args.seed)}...", flush=True)
+        row, probabilities = run_experiment(name, x, labels, feature_names, args.seed)
         row.update(owner=owner, git_commit=commit)
         append_row(args.log, row)
         # Out-of-fold probabilities for error analysis and threshold plots (E11).
-        oof = args.log.parent / "oof" / f"{name}.npz"
+        # compare_cv.py rebuilds the folds from the labels and the seed.
+        oof = args.log.parent / "oof" / f"{row['experiment']}.npz"
         oof.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(oof, probabilities=probabilities, labels=labels)
+        np.savez_compressed(
+            oof, probabilities=probabilities, labels=labels, seed=args.seed
+        )
         print(
             f"  F1 {row['f1_mean']:.4f} ± {row['f1_std']:.4f} at cutoff "
             f"{row['threshold']:.2f}, {row['columns']} columns, {row['seconds']} s",
