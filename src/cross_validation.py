@@ -1,8 +1,10 @@
 """Implementation of cross-validation for CS-433 Project 1"""
 
-
+# The five-feature baseline uses one stratified holdout split; the full pipeline
+# uses stratified k-fold CV, refitting preprocessing inside every fold.
 
 import numpy as np
+
 from src.metrics import THRESHOLDS, best_threshold, classification_metrics
 from src.preprocessing import fit_preprocessor, transform_features
 
@@ -97,3 +99,70 @@ def cross_validate(
         "folds": folds,
     }
 
+
+# Two-sided 95 % critical values of Student's t, by degrees of freedom (k - 1).
+T_CRITICAL_95 = {
+    1: 12.706,
+    2: 4.303,
+    3: 3.182,
+    4: 2.776,
+    5: 2.571,
+    6: 2.447,
+    7: 2.365,
+    8: 2.306,
+    9: 2.262,
+}
+
+
+def per_fold_f1(labels, probabilities, folds, thresholds=THRESHOLDS):
+    """Score saved out-of-fold probabilities the way cross_validate does: one cutoff
+    tuned on the pooled probabilities, then F1 in every fold. Returns both."""
+    y = (np.asarray(labels) == 1).astype(float)
+    probabilities, folds = np.asarray(probabilities), np.asarray(folds)
+    threshold, _ = best_threshold(y, probabilities, thresholds)
+    predictions = probabilities >= threshold
+    scores = [
+        classification_metrics(y[folds == f], predictions[folds == f])["f1"]
+        for f in np.unique(folds)
+    ]
+    return threshold, np.array(scores)
+
+
+def paired_comparison(labels, base, other, folds, thresholds=THRESHOLDS):
+    """Compare two models scored on the same folds: F1 of other minus base, per fold.
+
+    Each model keeps its own tuned cutoff. The fold differences are not independent,
+    because the training sets overlap, so the t statistic uses the Nadeau-Bengio
+    correction: the variance of the mean difference is scaled by
+    1/k + n_held_out/n_train = 1/k + 1/(k-1) instead of 1/k.
+    """
+    folds = np.asarray(folds)
+    k = len(np.unique(folds))
+    if k - 1 not in T_CRITICAL_95:
+        raise ValueError(f"Expected between 2 and 10 folds, got {k}.")
+    base_threshold, base_f1 = per_fold_f1(labels, base, folds, thresholds)
+    other_threshold, other_f1 = per_fold_f1(labels, other, folds, thresholds)
+    differences = other_f1 - base_f1
+    mean = float(np.mean(differences))
+    se = float(np.sqrt((1 / k + 1 / (k - 1)) * np.var(differences, ddof=1)))
+    if se > 0:
+        t = mean / se
+    else:  # identical differences in every fold
+        t = 0.0 if mean == 0 else float(np.sign(mean) * np.inf)
+    critical = T_CRITICAL_95[k - 1]
+    if t >= critical:
+        verdict = "better"
+    elif t <= -critical:
+        verdict = "worse"
+    else:
+        verdict = "no clear difference"
+    return {
+        "base_threshold": base_threshold,
+        "other_threshold": other_threshold,
+        "differences": differences,
+        "mean": mean,
+        "se": se,
+        "t": t,
+        "folds_better": int(np.count_nonzero(differences > 0)),
+        "verdict": verdict,
+    }
