@@ -1,68 +1,93 @@
 # Heart Disease Prediction
-Predicting coronary heart disease from BRFSS health survey data - EPFL CS-433 Machine Learning, Project 1 (Fall 2026).
 
-## Five-feature logistic baseline
+Predicting coronary heart disease (MICHD) from the BRFSS 2015 health survey - EPFL
+CS-433 Machine Learning, Project 1 (Fall 2026).
 
-Place the course files `x_train.csv` and `y_train.csv` in `data/`. Use a Python
-environment with NumPy installed, then run from the repository root:
+Final model: regularized logistic regression on 77 cleaned survey features
+(200 columns), with the probability cutoff tuned for F1. 5-fold cross-validated
+F1 0.4274 ± 0.0028; AIcrowd F1 0.436.
 
-```bash
-OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 python train_baseline.py
-```
+## Setup
 
-The thread settings avoid excessive BLAS parallelism on this small feature matrix;
-the script also works as `python train_baseline.py`. No notebook execution is needed.
-Options include `--data-dir`, `--output-dir`, `--max-iters`, and `--tolerance`.
+Python 3.9 or later with NumPy (matplotlib only for plots in the notebooks); no
+other library is used. Put the course files `x_train.csv`, `y_train.csv`, `x_test.csv`
+and `sample_submission.csv` in `data/` (or pass `--data-dir` to any script).
 
-The script uses `GENHLTH`, `PHYSHLTH`, `_SMOKER3`, `_BMI5`, and `_AGE80`, with
-the same stratified 80/20 split (seed 42) as the exploration notebook. Preprocessing
-is fitted on training rows only. Categories use reference-category indicators;
-numeric features use training-median replacement and training-based scaling.
-Missing indicators are included where they vary in training. BMI is already in
-decimal units in these CSVs. The resulting matrix includes an intercept.
-
-Training calls `implementations.logistic_regression`: unregularized full-batch
-gradient descent, starting at zero. The learning rate is derived from a bound on
-training-loss curvature. Every 250 updates, the script checks the largest absolute
-training-gradient component, stopping at `1e-5` or at 10,000 updates. It records
-whether the convergence criterion was reached. Neither stopping nor the initial
-probability cutoff of 0.5 is selected using validation performance.
-
-Outputs in `results/baseline/`:
-
-- `metrics.json`: settings, preprocessing statistics, coefficients, optimization
-  history, training/validation scores, and majority-class comparison.
-- `logistic_model.npz`: weights, preprocessing statistics, feature/column order,
-  split settings, and probability cutoff. Binary model files are ignored by Git.
-
-The model is fitted only on the training portion. Validation predictions use the
-same preprocessing statistics. Confusion-matrix rows are actual classes `[0, 1]`
-and columns are predicted classes `[0, 1]`: `[[TN, FP], [FN, TP]]`. Positive class 1
-corresponds to course label +1. Undefined precision/recall/F1 are reported as zero.
-Earlier exploration viewed all labeled data; this split does not undo that influence.
-
-The initial run converged after 5,500 gradient updates, using 262,508 training
-examples and 65,627 validation examples. At cutoff 0.5:
-
-| Validation model | Accuracy | Precision | Recall | F1 |
-|---|---:|---:|---:|---:|
-| Always negative | 91.17% | 0.00% | 0.00% | 0.0000 |
-| Logistic regression | 91.09% | 44.72% | 3.80% | 0.0700 |
-
-The logistic model detects 220 of 5,795 positive validation examples, with 272
-false positives. This is a weak detection baseline at the default cutoff, despite
-its high accuracy. Training and validation log losses are 0.242721 and 0.242675.
-No threshold search or class weighting has been performed. See `metrics.json`
-for the full settings, convergence history, and confusion matrix.
-
-To reuse the saved model, load it with `np.load(..., allow_pickle=False)`, pass the
-five raw columns in its recorded order to `src.preprocessing.transform_baseline_features`
-with the saved `medians`, `means`, `scales`, and `keep_missing`, then apply the
-weights and sigmoid. The training script verifies that reloading reproduces the
-validation scores. `run.py` remains reserved for the eventual competition submission.
-
-Run focused checks with:
+## Reproduce the submission
 
 ```bash
-python -m unittest discover -s tests -v
+python run.py
 ```
+
+This fits the final model on all 328,135 training rows and writes
+`submissions/submission.csv` (about one minute on a laptop). It first runs the same
+5-fold cross-validation as the experiments to pick the F1 cutoff (0.20);
+`python run.py --threshold 0.20` skips that step and gives the same file. Before
+finishing, it reads the file back and checks the header, the -1/+1 values and that
+the IDs match `x_test.csv` and `sample_submission.csv`.
+
+## Reproduce the experiments
+
+Every number in the report comes from `run_cv.py`, which runs named experiments and
+appends one row each to `results/results.csv`:
+
+```bash
+python run_cv.py --list                      # every experiment and its settings
+python run_cv.py E1-logistic E1-ridge        # run some of them
+python run_cv.py E1-logistic --seed 43       # same experiment on other folds
+```
+
+All experiments share one protocol: 5 stratified folds (seed 42), the whole
+preprocessing pipeline refit inside each fold, and the F1 cutoff chosen on a grid
+from 0.05 to 0.60 using the pooled out-of-fold probabilities. Each run also saves
+those probabilities in `results/oof/`, so runs can be compared afterwards without
+refitting:
+
+```bash
+python compare_cv.py E1-logistic E3-indicators E9-leaky
+```
+
+`compare_cv.py` compares every run with the first one fold by fold (a paired
+comparison with the Nadeau-Bengio corrected t-test) and gives the verdict that
+Table I of the report uses. The experiment names follow the report: E0 baselines,
+E1 the six required methods, E2-E5 preprocessing and feature choices, E6 class
+imbalance, E7 hyperparameters, E8 non-linear features, E9 post-diagnosis questions.
+Running all of them takes about 40 minutes.
+
+## Code layout
+
+| Path | Contents |
+|---|---|
+| `implementations.py` | The six required methods (least squares, ridge, MSE GD / SGD, logistic and regularized logistic regression by GD) |
+| `run.py` | Fits the final model and writes the AIcrowd submission |
+| `run_cv.py` | The experiment definitions and the cross-validation runner |
+| `compare_cv.py` | Paired fold-by-fold comparison of saved runs |
+| `src/feature_spec.py` | Per-feature decisions for all 321 columns: type, valid codes, skip-pattern fills, or why it is dropped |
+| `src/preprocessing.py` | CSV loading and the preprocessing pipeline (decoding, imputation, encoding, scaling), fitted on training rows only |
+| `src/cross_validation.py` | Stratified folds, cross-validation and the paired t-test |
+| `src/metrics.py` | Precision, recall, F1, cutoff search, stable sigmoid |
+| `helpers.py` | Course-provided CSV helpers |
+| `train_baseline.py` | The first five-feature logistic baseline (`results/baseline/`) |
+| `notebooks/` | Data exploration and the feature-by-feature decisions behind `feature_spec.py` |
+| `tests/` | Unit tests |
+
+## Preprocessing in short
+
+Each of the 321 columns is either used (77 features), dropped (survey metadata,
+optional modules that are at least 90 % missing, raw items that CDC already
+summarises in a calculated column) or excluded as leaky (questions only asked after
+a heart-disease diagnosis). Used features are decoded from survey codes: "don't
+know" / "refused" become missing and skip patterns are filled with their implied
+answer. Binary, ordinal and continuous features are kept as numbers, with
+continuous ones clipped to their 0.5-99.5 % training quantiles; missing values get
+the training median, and every column is standardized. Nominal features are one-hot
+encoded with "missing" as a level of its own and the most frequent level as the
+reference. All statistics come from the training rows of each fold.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests
+```
+
+The tests use small synthetic tables, so they need no data and run in a few seconds.

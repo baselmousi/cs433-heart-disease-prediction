@@ -4,10 +4,21 @@ import csv
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
-from run_cv import COLUMNS, EXPERIMENTS, append_row, run_experiment
+from run_cv import (
+    BASE,
+    COLUMNS,
+    EXPERIMENTS,
+    append_row,
+    logistic,
+    run_experiment,
+    subsampled_logistic,
+    undersampled_logistic,
+    weighted_logistic,
+)
 from src import feature_spec as fs
 from src.preprocessing import load_csv
 
@@ -25,6 +36,14 @@ def synthetic_table(n, seed):
     return x, names
 
 
+def short(experiment, max_iters=20_000):
+    """The same experiment with at most max_iters steps, so tests stay fast."""
+    question, model, params, options = experiment
+    if params.get("max_iters", 0) > max_iters:
+        params = {**params, "max_iters": max_iters}
+    return question, model, params, options
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.x, self.names = synthetic_table(1000, seed=0)
@@ -33,18 +52,56 @@ class RunnerTests(unittest.TestCase):
 
     def test_every_experiment_runs_and_fills_its_row(self):
         for name in EXPERIMENTS:
-            row, probabilities = run_experiment(name, self.x, self.labels, self.names)
+            with mock.patch.dict(EXPERIMENTS, {name: short(EXPERIMENTS[name])}):
+                row, probabilities = run_experiment(
+                    name, self.x, self.labels, self.names
+                )
             self.assertEqual(row["experiment"], name)
             self.assertEqual(len(probabilities), len(self.x))
             missing = set(COLUMNS) - set(row) - {"owner", "git_commit"}
             self.assertFalse(missing, f"{name} row lacks {missing}")
 
     def test_models_recover_a_planted_signal_and_majority_scores_zero(self):
-        for name in ("E1-logistic", "E1-least-squares", "E1-ridge"):
-            row, _ = run_experiment(name, self.x, self.labels, self.names)
+        names = ("E1-logistic", "E1-least-squares", "E1-ridge", "E1-mse-gd")
+        names += ("E1-mse-sgd", "E1-logistic-plain", "E0-raw-logistic", "E2-raw-codes")
+        for name in names:
+            with mock.patch.dict(EXPERIMENTS, {name: short(EXPERIMENTS[name])}):
+                row, _ = run_experiment(name, self.x, self.labels, self.names)
             self.assertGreater(row["f1_mean"], 0.95, name)
         row, _ = run_experiment("E0-majority", self.x, self.labels, self.names)
         self.assertEqual(row["f1_mean"], 0)
+
+    def test_imbalance_and_subsampled_models_reduce_to_plain_logistic(self):
+        rng = np.random.default_rng(1)
+        matrix = np.c_[np.ones(300), rng.normal(size=(300, 4))]
+        labels = (matrix[:, 1] + rng.normal(size=300) > 1.2).astype(float)
+        held_out = np.c_[np.ones(50), rng.normal(size=(50, 4))]
+        plain = logistic(**BASE)(matrix, labels, held_out)
+        np.testing.assert_allclose(
+            weighted_logistic(**BASE, positive_weight=1)(matrix, labels, held_out),
+            plain,
+        )
+        everything = 10 * int(np.sum(labels == 0))  # more than there are negatives
+        np.testing.assert_allclose(
+            undersampled_logistic(**BASE, negatives_per_positive=everything)(
+                matrix, labels, held_out
+            ),
+            plain,
+        )
+        np.testing.assert_allclose(
+            subsampled_logistic(**BASE, fraction=1.0)(matrix, labels, held_out), plain
+        )
+
+    def test_odds_correction_keeps_probabilities_on_the_natural_scale(self):
+        rng = np.random.default_rng(2)
+        matrix = np.c_[np.ones(2000), rng.normal(size=(2000, 3))]
+        labels = (rng.random(2000) < 0.1).astype(float)  # no signal, 10 % positive
+        for model in (
+            weighted_logistic(**BASE, positive_weight="balanced"),
+            undersampled_logistic(**BASE, negatives_per_positive=1),
+        ):
+            probabilities = model(matrix, labels, matrix)
+            self.assertAlmostEqual(probabilities.mean(), labels.mean(), delta=0.02)
 
     def test_log_gets_one_header_and_rows_in_order(self):
         with tempfile.TemporaryDirectory() as directory:

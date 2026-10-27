@@ -42,6 +42,8 @@ def classification_metrics(y_true, y_pred):
     }
 
 
+# Cutoffs searched by best_threshold; the positive rate is about 9 %, so the best
+# F1 cutoff sits far below 0.5.
 THRESHOLDS = np.round(np.arange(0.05, 0.605, 0.01), 2)
 
 
@@ -59,4 +61,3 @@ def best_threshold(y_true, probabilities, thresholds=THRESHOLDS):
     ]
     best = int(np.argmax(scores))
     return float(thresholds[best]), scores[best]
-
