@@ -9,6 +9,7 @@ and writes +1/-1 predictions for x_test.csv. The F1 cutoff is chosen by the same
 """
 
 import argparse
+import csv
 from pathlib import Path
 import time
 
@@ -63,7 +64,30 @@ def predict(name, x_train, labels, x_test, feature_names, threshold=None):
         y.astype(matrix.dtype),
         transform_features(x_test, feature_names, state),
     )
+    # A NaN probability would silently become -1 below, so stop instead.
+    if not np.all(np.isfinite(probabilities)):
+        raise ValueError("Some test probabilities are not finite.")
     return np.where(probabilities >= threshold, 1, -1), probabilities, threshold
+
+
+def check_submission(path, test_ids, sample_path=None):
+    """Read the written file back and check that it is what AIcrowd expects: the
+    header Id,Prediction and one -1/+1 row per test ID, in x_test order, and the
+    same IDs as the course's sample_submission.csv when that file is given."""
+    with open(path, newline="") as handle:
+        rows = list(csv.reader(handle))
+    if rows[0] != ["Id", "Prediction"]:
+        raise ValueError(f"Unexpected header {rows[0]} in {path}.")
+    ids = [int(r[0]) for r in rows[1:]]
+    if ids != list(test_ids):
+        raise ValueError(f"The IDs in {path} are not the x_test IDs in order.")
+    if {r[1] for r in rows[1:]} - {"-1", "1"}:
+        raise ValueError(f"{path} has predictions other than -1 and 1.")
+    if sample_path is not None and Path(sample_path).exists():
+        with open(sample_path, newline="") as handle:
+            sample_ids = [int(r[0]) for r in list(csv.reader(handle))[1:]]
+        if ids != sample_ids:
+            raise ValueError(f"The IDs in {path} differ from {sample_path}.")
 
 
 def main(argv=None):
@@ -88,6 +112,7 @@ def main(argv=None):
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     create_csv_submission(test_ids, predictions, args.output)
+    check_submission(args.output, test_ids, args.data_dir / "sample_submission.csv")
     # The training positive rate is about 9 %; the cutoff trades precision for
     # recall, so a few points more positives than that is expected.
     print(

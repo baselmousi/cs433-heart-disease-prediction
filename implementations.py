@@ -63,15 +63,19 @@ def ridge_regression(y, tx, lambda_):
 
 
 def _sigmoid(t):
-    """Apply the sigmoid function on t."""
-    return 1 / (1 + np.exp(-t))
+    """Apply the sigmoid function on t, as exp(-log(1 + exp(-t))) so that large
+    negative t does not overflow np.exp."""
+    return np.exp(-np.logaddexp(0, -t))
 
 
 def _logistic_loss(y, tx, w):
-    """Compute the negative log likelihood loss"""
+    """Compute the negative log likelihood loss.
 
-    loss = y * np.log(_sigmoid(tx @ w)) + (1 - y) * np.log(1 - _sigmoid(tx @ w))
-    return -np.mean(loss)
+    -[y log s(z) + (1 - y) log(1 - s(z))] equals log(1 + exp(z)) - y z, which stays
+    finite where s(z) rounds to 0 or 1.
+    """
+    z = tx @ w
+    return np.mean(np.logaddexp(0, z) - y * z)
 
 
 def logistic_regression(y, tx, initial_w, max_iters, gamma):

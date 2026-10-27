@@ -18,9 +18,16 @@ import time
 
 import numpy as np
 
-from implementations import least_squares, reg_logistic_regression, ridge_regression
+from implementations import (
+    least_squares,
+    logistic_regression,
+    mean_squared_error_gd,
+    mean_squared_error_sgd,
+    reg_logistic_regression,
+    ridge_regression,
+)
 from src.cross_validation import cross_validate
-from src.metrics import classification_metrics
+from src.metrics import classification_metrics, probabilities_from_logits
 from src.preprocessing import load_csv, read_feature_names
 
 ROOT = Path(__file__).resolve().parent
@@ -59,7 +66,115 @@ def logistic(lambda_, gamma, max_iters):
     def fit_predict(matrix, labels, held_out):
         w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
         w, _ = reg_logistic_regression(labels, matrix, lambda_, w0, max_iters, gamma)
-        return 1 / (1 + np.exp(-(held_out @ w)))
+        return probabilities_from_logits(held_out @ w)
+
+    return fit_predict
+
+
+def plain_logistic(gamma, max_iters):
+    """Unregularized logistic regression by gradient descent, starting from zero."""
+
+    def fit_predict(matrix, labels, held_out):
+        w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        w, _ = logistic_regression(labels, matrix, w0, max_iters, gamma)
+        return probabilities_from_logits(held_out @ w)
+
+    return fit_predict
+
+
+def mse_gd(gamma, max_iters):
+    """Linear regression on 0/1 labels by full-batch gradient descent, from zero."""
+
+    def fit_predict(matrix, labels, held_out):
+        w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        w, _ = mean_squared_error_gd(labels, matrix, w0, max_iters, gamma)
+        return held_out @ w
+
+    return fit_predict
+
+
+def mse_sgd(gamma, max_iters, seed=0):
+    """Linear regression on 0/1 labels by SGD, one random row per step, from zero.
+    mean_squared_error_sgd draws rows from np.random, seeded here so runs repeat."""
+
+    def fit_predict(matrix, labels, held_out):
+        np.random.seed(seed)
+        w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        w, _ = mean_squared_error_sgd(labels, matrix, w0, max_iters, gamma)
+        return held_out @ w
+
+    return fit_predict
+
+
+def weighted_logistic(lambda_, gamma, max_iters, positive_weight):
+    """Logistic regression whose loss counts every positive positive_weight times
+    ("balanced": as many times as there are negatives per positive).
+
+    Same gradient descent as reg_logistic_regression, with the weights rescaled to
+    mean 1 so the step size means the same. The weighting multiplies the odds by
+    positive_weight; the returned probabilities divide it back out, which keeps
+    their ranking but puts the tuned cutoff inside the usual grid.
+    """
+
+    def fit_predict(matrix, labels, held_out):
+        weight = positive_weight
+        if weight == "balanced":
+            weight = np.sum(labels != 1) / np.sum(labels == 1)
+        weights = np.where(labels == 1, weight, 1.0).astype(matrix.dtype)
+        weights /= weights.mean()
+        w = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        for _ in range(max_iters):
+            error = weights * (probabilities_from_logits(matrix @ w) - labels)
+            w = w - gamma * (matrix.T @ error / len(labels) + 2 * lambda_ * w)
+        return probabilities_from_logits(held_out @ w - np.log(weight))
+
+    return fit_predict
+
+
+def undersampled_logistic(lambda_, gamma, max_iters, negatives_per_positive, seed=0):
+    """Regularized logistic regression trained on all positives and a random subset
+    of negatives_per_positive negatives per positive, drawn anew in every fold.
+
+    Keeping a fraction f of the negatives multiplies the odds by 1 / f; the returned
+    probabilities undo that, as in weighted_logistic.
+    """
+    rng = np.random.default_rng(seed)
+
+    def fit_predict(matrix, labels, held_out):
+        positives = np.flatnonzero(labels == 1)
+        negatives = np.flatnonzero(labels != 1)
+        n_kept = min(len(negatives), negatives_per_positive * len(positives))
+        keep = np.r_[positives, rng.choice(negatives, n_kept, replace=False)]
+        w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        w, _ = reg_logistic_regression(
+            labels[keep], matrix[keep], lambda_, w0, max_iters, gamma
+        )
+        kept_fraction = n_kept / len(negatives)
+        return probabilities_from_logits(held_out @ w + np.log(kept_fraction))
+
+    return fit_predict
+
+
+def subsampled_logistic(lambda_, gamma, max_iters, fraction, seed=0):
+    """Regularized logistic regression trained on a random fraction of the training
+    rows, the same fraction of each class, drawn anew in every fold (E7 learning
+    curve). Preprocessing statistics still come from the whole training fold; the
+    held-out fold is the same as for the other experiments.
+    """
+    rng = np.random.default_rng(seed)
+
+    def fit_predict(matrix, labels, held_out):
+        keep = np.concatenate(
+            [
+                rng.choice(rows, max(1, round(fraction * len(rows))), replace=False)
+                for rows in (np.flatnonzero(labels == 1), np.flatnonzero(labels != 1))
+            ]
+        )
+        w0 = np.zeros(matrix.shape[1], dtype=matrix.dtype)
+        w, _ = reg_logistic_regression(
+            labels[keep], matrix[keep], lambda_, w0, max_iters, gamma
+        )
+        return probabilities_from_logits(held_out @ w)
 
     return fit_predict
 
@@ -79,7 +194,17 @@ def linear(lambda_=None):
     return fit_predict
 
 
-MODELS = {"majority": majority, "logistic": logistic, "linear": linear}
+MODELS = {
+    "majority": majority,
+    "logistic": logistic,
+    "plain-logistic": plain_logistic,
+    "mse-gd": mse_gd,
+    "mse-sgd": mse_sgd,
+    "weighted-logistic": weighted_logistic,
+    "undersampled-logistic": undersampled_logistic,
+    "subsampled-logistic": subsampled_logistic,
+    "linear": linear,
+}
 BASE = {"lambda_": 1e-4, "gamma": 1.0, "max_iters": 200}
 
 # name -> (question it answers, model, model params, fit_preprocessor options)
@@ -88,6 +213,44 @@ EXPERIMENTS = {
     "E1-logistic": ("Main pipeline, regularized logistic", "logistic", BASE, {}),
     "E1-least-squares": ("Main pipeline, least squares", "linear", {}, {}),
     "E1-ridge": ("Main pipeline, ridge", "linear", {"lambda_": 1e-4}, {}),
+    # gamma below 2 / 8.5, the largest eigenvalue of X.T @ X / n on the 200 columns.
+    "E1-mse-gd": (
+        "Main pipeline, linear regression by GD",
+        "mse-gd",
+        {"gamma": 0.1, "max_iters": 1000},
+        {},
+    ),
+    # gamma * |x_i|^2 < 2 for every row (largest |x_i|^2 is about 7400); about 4 epochs.
+    "E1-mse-sgd": (
+        "Main pipeline, linear regression by SGD",
+        "mse-sgd",
+        {"gamma": 1e-4, "max_iters": 1_000_000},
+        {},
+    ),
+    "E1-logistic-plain": (
+        "Main pipeline, logistic regression without penalty",
+        "plain-logistic",
+        {"gamma": 1.0, "max_iters": 200},
+        {},
+    ),
+    "E0-raw-least-squares": (
+        "Every column except LEAKY, raw codes, mean-imputed, least squares",
+        "linear",
+        {},
+        {"raw": "all"},
+    ),
+    "E0-raw-logistic": (
+        "Every column except LEAKY, raw codes, mean-imputed, logistic",
+        "logistic",
+        BASE,
+        {"raw": "all"},
+    ),
+    "E2-raw-codes": (
+        "The 77 SPEC features with raw codes, mean-imputed, logistic",
+        "logistic",
+        BASE,
+        {"raw": "spec"},
+    ),
     "E3-indicators": (
         "Add missing indicators",
         "logistic",
@@ -137,6 +300,61 @@ for gamma in (0.5, 2.0):
         "logistic",
         {**BASE, "gamma": gamma},
         {},
+    )
+# Learning curve: the same held-out folds, a growing share of the training rows
+# (1.0 is E1-logistic).
+for fraction in (0.01, 0.02, 0.05, 0.1, 0.25, 0.5):
+    EXPERIMENTS[f"E7-fraction-{fraction:g}"] = (
+        f"train on {fraction:.0%} of the training rows",
+        "subsampled-logistic",
+        {**BASE, "fraction": fraction},
+        {},
+    )
+
+# E6: handle the 1:10 imbalance in training, not only with the tuned cutoff.
+for weight in (3, "balanced"):
+    EXPERIMENTS[f"E6-weight-{weight}"] = (
+        f"positives weighted {weight} in the loss",
+        "weighted-logistic",
+        {**BASE, "positive_weight": weight},
+        {},
+    )
+for ratio in (1, 3):
+    EXPERIMENTS[f"E6-undersample-{ratio}"] = (
+        f"train on {ratio} random negative(s) per positive",
+        "undersampled-logistic",
+        {**BASE, "negatives_per_positive": ratio},
+        {},
+    )
+
+# E8: non-linear features, one group at a time, then all three together.
+E8_GROUPS = {
+    "squares": "squares of the continuous features",
+    "bins": "age and BMI bins",
+    "interactions": "age x sex, BMI, smoking, diabetes, BP, cholesterol",
+}
+for group, question in E8_GROUPS.items():
+    EXPERIMENTS[f"E8-{group}"] = (f"Add {question}", "logistic", BASE, {group: True})
+EXPERIMENTS["E8-all"] = (
+    "Add squares, bins and age interactions",
+    "logistic",
+    BASE,
+    dict.fromkeys(E8_GROUPS, True),
+)
+
+# E5: features that may partly follow from a heart-disease diagnosis rather than
+# predict it (vaccines recommended to cardiac patients, blood-pressure medication).
+E5_DROPS = {
+    "vaccines": ("FLUSHOT6", "PNEUVAC3"),
+    "bpmeds": ("BPMEDS",),
+    "borderline": ("FLUSHOT6", "PNEUVAC3", "BPMEDS"),
+}
+for group, features in E5_DROPS.items():
+    EXPERIMENTS[f"E5-no-{group}"] = (
+        f"Drop {', '.join(features)}",
+        "logistic",
+        BASE,
+        {"drop": features},
     )
 
 

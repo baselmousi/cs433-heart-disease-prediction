@@ -92,6 +92,66 @@ class FullPipelineTests(unittest.TestCase):
         self.assertFalse(any(name.split("=")[0] in fs.LEAKY for name in base))
         self.assertIn("HAREHAB1", with_leaky["features"])
 
+    def test_nonlinear_options_add_squares_bins_and_age_products(self):
+        x = self.x.copy()
+        x[:, self.index["_AGE80"]] = np.random.default_rng(3).integers(18, 81, len(x))
+        x[:, self.index["_BMI5"]] = np.random.default_rng(4).uniform(16, 45, len(x))
+        base = fit_preprocessor(x, self.names)["columns"]
+        squares = fit_preprocessor(x, self.names, squares=True)["columns"]
+        bins = fit_preprocessor(x, self.names, bins=True)["columns"]
+        products = fit_preprocessor(x, self.names, interactions=True)["columns"]
+        continuous = [n for n in fs.SPEC if fs.SPEC[n][0] == "continuous"]
+        self.assertEqual(
+            set(squares) - set(base), {f"{n}^2" for n in continuous if n in base}
+        )
+        self.assertEqual(
+            set(bins) - set(base),
+            {"_AGE80>=25", "_AGE80>=35", "_AGE80>=45", "_AGE80>=55", "_AGE80>=65"}
+            | {"_AGE80>=75", "_BMI5>=18.5", "_BMI5>=25", "_BMI5>=30", "_BMI5>=35"}
+            | {"_BMI5>=40"},
+        )
+        added = set(products) - set(base)
+        self.assertIn("_AGE80*SEX", added)
+        self.assertIn("_AGE80*_BMI5", added)
+        self.assertTrue(any(n.startswith("_AGE80*_SMOKER3=") for n in added))
+        self.assertFalse(any(n.startswith("_AGE80*_AGE80") for n in added))
+
+    def test_nonlinear_columns_are_computed_from_training_statistics(self):
+        state = fit_preprocessor(self.x, self.names, squares=True, interactions=True)
+        matrix = transform_features(self.x[:5], self.names, state, dtype=np.float64)
+        age = np.clip(self.column(self.x[:5], "_AGE80"), *state["bounds"]["_AGE80"])
+        age = np.where(np.isnan(age), state["median"]["_AGE80"], age)
+        centred = age - state["center"]["_AGE80"]
+        sex = (self.column(self.x[:5], "SEX") == 1) * 1.0
+        for name, raw in (("_AGE80^2", centred**2), ("_AGE80*SEX", centred * sex)):
+            j = state["columns"].index(name)
+            mean, std = state["mean"][j - 1], state["std"][j - 1]  # no intercept
+            np.testing.assert_allclose(matrix[:, j], (raw - mean) / std)
+
+    def test_drop_leaves_out_exactly_the_named_features(self):
+        base = fit_preprocessor(self.x, self.names)["features"]
+        state = fit_preprocessor(self.x, self.names, drop=("FLUSHOT6", "BPMEDS"))
+        self.assertEqual(set(base) - set(state["features"]), {"FLUSHOT6", "BPMEDS"})
+        with self.assertRaises(ValueError):
+            fit_preprocessor(self.x, self.names, drop=("NOT_A_FEATURE",))
+
+    def test_raw_baselines_keep_codes_as_numbers(self):
+        x = self.x.copy()
+        genhlth = self.column(x, "GENHLTH")
+        genhlth[:10] = 9  # "refused": a missing code, which raw mode keeps as 9
+        x[:, self.index["GENHLTH"]] = genhlth
+        state = fit_preprocessor(x, self.names, raw="spec")
+        self.assertEqual(state["features"], list(fs.SPEC))
+        matrix = transform_features(x, self.names, state, dtype=np.float64)
+        j = state["columns"].index("GENHLTH")
+        filled = np.where(np.isnan(genhlth), np.nanmean(genhlth), genhlth)
+        expected = (filled - filled.mean()) / filled.std()
+        np.testing.assert_allclose(matrix[:, j], expected)
+        every = fit_preprocessor(x, self.names, raw="all")["features"]
+        self.assertFalse(set(every) & set(fs.LEAKY))
+        with self.assertRaises(ValueError):
+            fit_preprocessor(x, self.names, raw="decoded")
+
     def test_mostly_missing_features_are_dropped(self):
         x = self.x.copy()
         x[:1900, self.index["DIABAGE2"]] = np.nan  # 95 % missing > max_nan

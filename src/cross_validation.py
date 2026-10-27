@@ -59,7 +59,7 @@ def cross_validate(
     k=5,
     seed=42,
     thresholds=THRESHOLDS,
-    **options
+    **options,
 ):
     """Stratified k-fold CV of the full pipeline, scored by positive-class F1.
 

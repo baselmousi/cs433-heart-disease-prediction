@@ -173,6 +173,31 @@ def read_feature_names(path):
     return header[1:]
 
 
+def load_csv(path, chunk_rows=20_000):
+    """Load a course CSV without its header as float64; empty fields become NaN.
+
+    Gives the same values as np.genfromtxt, about 5 times faster (4 s for x_train.csv).
+    """
+    with open(path) as handle:
+        handle.readline()
+        n_rows = sum(1 for _ in handle)
+    with open(path) as handle:
+        n_columns = len(handle.readline().split(","))
+        out = np.empty((n_rows, n_columns))
+        start = 0
+        while lines := list(itertools.islice(handle, chunk_rows)):
+            # np.loadtxt cannot read empty fields, so spell them out as nan.
+            # Two passes, since ",,," only gets every other gap in one.
+            text = "\n".join(line.rstrip("\r\n") for line in lines) + "\n"
+            text = text.replace(",,", ",nan,").replace(",,", ",nan,")
+            text = text.replace(",\n", ",nan\n")
+            out[start : start + len(lines)] = np.loadtxt(
+                text.splitlines(), delimiter=",", ndmin=2
+            )
+            start += len(lines)
+    return out
+
+
 def clean_columns(x, feature_names, features):
     """Return cleaned float64 copies of the requested features, as {name: column}.
 
@@ -205,6 +230,15 @@ def clean_columns(x, feature_names, features):
     return columns
 
 
+# E8 non-linear features. Each bin adds a 0/1 step "value >= edge" next to the linear
+# term, so its weight is the jump in log-odds at that edge.
+BIN_EDGES = {
+    "_AGE80": [25, 35, 45, 55, 65, 75],  # ten-year age groups
+    "_BMI5": [18.5, 25, 30, 35, 40],  # WHO underweight ... obesity class III
+}
+AGE_INTERACTIONS = ("SEX", "_BMI5", "_SMOKER3", "DIABETE3", "BPHIGH4", "TOLDHI2")
+
+
 def fit_preprocessor(
     x,
     feature_names,
@@ -212,6 +246,11 @@ def fit_preprocessor(
     indicators=False,
     ordinal_onehot=False,
     leaky=False,
+    squares=False,
+    bins=False,
+    interactions=False,
+    drop=(),
+    raw=None,
     clip=0.995,
     min_count=30,
 ):
@@ -222,6 +261,14 @@ def fit_preprocessor(
     - indicators: add a 0/1 missing indicator to numeric features with >= 1 % NaN.
     - ordinal_onehot: one-hot encode ordinal features instead of keeping them numeric.
     - leaky: add the LEAKY features (experiment E9), one-hot encoded.
+    - squares: add (value - training mean)² for every continuous feature (E8).
+    - bins: add the BIN_EDGES steps for age and BMI (E8).
+    - interactions: add age × each column of the AGE_INTERACTIONS features (E8).
+      Age and continuous partners are centred first, which keeps the products
+      from being nearly copies of the main terms.
+    - drop: SPEC features to leave out (experiment E5).
+    - raw: skip all cleaning, for the baselines; see _fit_raw. "spec" keeps the SPEC
+      features (E2), "all" every column except LEAKY (E0). Other options are ignored.
     - clip: clip continuous features to their [1 - clip, clip] training quantiles.
     - min_count: nominal levels with fewer training rows share the reference row.
 
@@ -231,7 +278,13 @@ def fit_preprocessor(
     Columns that are exact combinations of earlier ones are dropped as well and
     listed in state["dependent"].
     """
-    candidates = list(fs.SPEC) + (list(fs.LEAKY) if leaky else [])
+    if raw:
+        return _fit_raw(x, feature_names, raw)
+    unknown = set(drop) - set(fs.SPEC)
+    if unknown:
+        raise ValueError(f"Cannot drop features outside SPEC: {sorted(unknown)}")
+    candidates = [name for name in fs.SPEC if name not in drop]
+    candidates += list(fs.LEAKY) if leaky else []
     columns = clean_columns(x, feature_names, candidates)
     state = {
         "features": [],
@@ -241,6 +294,10 @@ def fit_preprocessor(
         "levels": {},
         "reference": {},
         "indicator": [],
+        "center": {},
+        "squares": squares,
+        "bins": BIN_EDGES if bins else {},
+        "interactions": interactions,
     }
     for name in candidates:
         column = columns[name]
@@ -268,6 +325,9 @@ def fit_preprocessor(
             state["bounds"][name] = [float(b) for b in bounds]
             column = np.clip(column, *bounds)
         state["median"][name] = float(np.nanmedian(column))
+        if kind == "continuous":
+            filled = np.where(nan, state["median"][name], column)
+            state["center"][name] = float(filled.mean())
         if indicators and nan.mean() >= 0.01:
             state["indicator"].append(name)
     matrix, names = _encode(columns, state)
@@ -278,6 +338,40 @@ def fit_preprocessor(
     state["columns"] = ["intercept"] + [names[j] for j in keep]
     state["dependent"] = [names[j] for j in np.setdiff1d(varying, keep)]
     return state
+
+
+def _raw_matrix(x, feature_names, features):
+    """The requested columns of x as float64, in the order of features."""
+    index = {name: j for j, name in enumerate(feature_names)}
+    return x[:, [index[name] for name in features]].astype(np.float64, copy=False)
+
+
+def _fit_raw(x, feature_names, raw):
+    """Baseline preprocessing: survey codes used as plain numbers (77, 88, 99 included),
+    NaN replaced by the training mean, then the usual standardization."""
+    if raw not in ("spec", "all"):
+        raise ValueError(f'raw must be "spec" or "all", not {raw!r}.')
+    features = list(fs.SPEC)
+    if raw == "all":
+        features = [name for name in feature_names if name not in fs.LEAKY]
+    matrix = _raw_matrix(x, feature_names, features)
+    observed = ~np.isnan(matrix).all(axis=0)
+    features, matrix = [n for n, o in zip(features, observed) if o], matrix[:, observed]
+    fill = np.nanmean(matrix, axis=0)
+    matrix = np.where(np.isnan(matrix), fill, matrix)
+    mean, std = matrix.mean(axis=0), matrix.std(axis=0)
+    varying = np.flatnonzero(std > 0)
+    keep = varying[_independent(matrix[:, varying], mean[varying], std[varying])]
+    return {
+        "raw": raw,
+        "features": features,
+        "fill": fill,
+        "keep": keep,
+        "mean": mean[keep],
+        "std": std[keep],
+        "columns": ["intercept"] + [features[j] for j in keep],
+        "dependent": [features[j] for j in np.setdiff1d(varying, keep)],
+    }
 
 
 def _independent(matrix, mean, std, tol=1e-9, chunk_rows=50_000):
@@ -320,11 +414,28 @@ def _encode(columns, state):
             column = (column == 1) * 1.0
         if kind == "continuous":
             column = np.clip(column, *state["bounds"][name])
-        blocks.append(np.where(nan, state["median"][name], column))
+        filled = np.where(nan, state["median"][name], column)
+        blocks.append(filled)
         names.append(name)
         if name in state["indicator"]:
             blocks.append(nan)
             names.append(f"{name}_missing")
+        if kind != "continuous":
+            continue
+        if state["squares"]:
+            blocks.append((filled - state["center"][name]) ** 2)
+            names.append(f"{name}^2")
+        for edge in state["bins"].get(name, []):
+            blocks.append(filled >= edge)
+            names.append(f"{name}>={edge:g}")
+    if state["interactions"] and "_AGE80" in state["features"]:
+        age = blocks[names.index("_AGE80")] - state["center"]["_AGE80"]
+        for j, column_name in enumerate(list(names)):
+            # "SEX", "_BMI5" or a one-hot level such as "_SMOKER3=1"; not "_BMI5^2".
+            if column_name.split("=")[0] in AGE_INTERACTIONS:
+                partner = blocks[j] - state["center"].get(column_name, 0.0)
+                blocks.append(age * partner)
+                names.append(f"_AGE80*{column_name}")
     return np.column_stack(blocks).astype(np.float64), names
 
 
@@ -333,35 +444,14 @@ def transform_features(x, feature_names, state, dtype=np.float32):
 
     The columns are named in state["columns"].
     """
-    columns = clean_columns(x, feature_names, state["features"])
-    matrix, _ = _encode(columns, state)
+    if state.get("raw"):
+        matrix = _raw_matrix(x, feature_names, state["features"])
+        matrix = np.where(np.isnan(matrix), state["fill"], matrix)
+    else:
+        columns = clean_columns(x, feature_names, state["features"])
+        matrix, _ = _encode(columns, state)
     matrix = (matrix[:, state["keep"]] - state["mean"]) / state["std"]
     matrix = np.column_stack([np.ones(len(matrix)), matrix]).astype(dtype)
     if not np.isfinite(matrix).all():
         raise ValueError("Prepared features contain nonfinite entries.")
     return matrix
-
-
-def load_csv(path, chunk_rows=20_000):
-    """Load a course CSV without its header as float64; empty fields become NaN.
-
-    Gives the same values as np.genfromtxt, about 5 times faster (4 s for x_train.csv).
-    """
-    with open(path) as handle:
-        handle.readline()
-        n_rows = sum(1 for _ in handle)
-    with open(path) as handle:
-        n_columns = len(handle.readline().split(","))
-        out = np.empty((n_rows, n_columns))
-        start = 0
-        while lines := list(itertools.islice(handle, chunk_rows)):
-            # np.loadtxt cannot read empty fields, so spell them out as nan.
-            # Two passes, since ",,," only gets every other gap in one.
-            text = "\n".join(line.rstrip("\r\n") for line in lines) + "\n"
-            text = text.replace(",,", ",nan,").replace(",,", ",nan,")
-            text = text.replace(",\n", ",nan\n")
-            out[start : start + len(lines)] = np.loadtxt(
-                text.splitlines(), delimiter=",", ndmin=2
-            )
-            start += len(lines)
-    return out
