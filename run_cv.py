@@ -35,7 +35,6 @@ COLUMNS = [
     "date",
     "owner",
     "experiment",
-    "git_commit",
     "model",
     "params",
     "preprocessing",
@@ -358,21 +357,6 @@ for group, features in E5_DROPS.items():
     )
 
 
-def git_commit():
-    """Short hash of HEAD, marked -dirty if tracked files have uncommitted changes."""
-
-    def git(*args):
-        return subprocess.run(
-            ["git", *args], cwd=ROOT, capture_output=True, text=True, check=True
-        ).stdout.strip()
-
-    try:
-        dirty = git("status", "--porcelain", "--untracked-files=no")
-        return git("rev-parse", "--short", "HEAD") + ("-dirty" if dirty else "")
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-
-
 def run_name(name, seed):
     """Name in the log and the out-of-fold file; seed 42 keeps the plain name."""
     return name if seed == 42 else f"{name}-seed{seed}"
@@ -454,14 +438,13 @@ def main():
             ["git", "config", "user.name"], capture_output=True, text=True
         ).stdout.strip()
     )
-    commit = git_commit()
 
     for name in args.experiments:
         print(f"Running {run_name(name, args.seed)}...", flush=True)
         row, probabilities = run_experiment(name, x, labels, feature_names, args.seed)
-        row.update(owner=owner, git_commit=commit)
+        row.update(owner=owner)
         append_row(args.log, row)
-        # Out-of-fold probabilities for error analysis and threshold plots (E11).
+        # Out-of-fold probabilities for paired comparisons and threshold plots.
         # compare_cv.py rebuilds the folds from the labels and the seed.
         oof = args.log.parent / "oof" / f"{row['experiment']}.npz"
         oof.parent.mkdir(parents=True, exist_ok=True)

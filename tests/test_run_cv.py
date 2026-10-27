@@ -58,7 +58,7 @@ class RunnerTests(unittest.TestCase):
                 )
             self.assertEqual(row["experiment"], name)
             self.assertEqual(len(probabilities), len(self.x))
-            missing = set(COLUMNS) - set(row) - {"owner", "git_commit"}
+            missing = set(COLUMNS) - set(row) - {"owner"}
             self.assertFalse(missing, f"{name} row lacks {missing}")
 
     def test_models_recover_a_planted_signal_and_majority_scores_zero(self):

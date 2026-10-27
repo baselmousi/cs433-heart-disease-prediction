@@ -154,6 +154,19 @@ rows. It explains most of the +0.010: on all other rows, F1 moves only from 0.42
 0.425 ("Feature Leakage"). A question that is only asked after the diagnosis restates
 the label rather than predicting it, so the final model does not use it.
 
+**Where the line is drawn.** A feature is left out when its answer is a consequence
+of the diagnosis rather than a risk factor. `HAREHAB1` is the clear case. The five
+aspirin questions ask about taking aspirin to prevent a heart attack or stroke; they
+come from an optional module answered by at most 4.3 % of the rows, so the 90 %
+module rule (section 3) would drop them anyway. The borderline features stay in
+because who is asked does not depend on the label: `BPMEDS` is asked of everyone
+with high blood pressure (the `BPHIGH4` = yes rows), and the flu and
+pneumonia vaccine questions of everyone. Their answers still differ by label
+(pneumonia vaccine: 15 % positive among "yes", 5 % among "no"), partly because
+vaccination is recommended after a heart diagnosis, so they may carry some reverse
+causation. Dropping all three changes F1 by -0.0020 (E5-no-borderline, no clear
+difference), so no conclusion depends on this choice.
+
 ## 6. Limitations
 
 - The feature decisions were made by hand, partly from checks on all labelled training

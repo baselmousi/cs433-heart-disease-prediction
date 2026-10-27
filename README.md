@@ -10,8 +10,10 @@ F1 0.4274 ± 0.0028; AIcrowd F1 0.436.
 ## Setup
 
 Python 3.9 or later with NumPy (matplotlib only for plots in the notebooks); no
-other library is used. Put the course files `x_train.csv`, `y_train.csv`, `x_test.csv`
-and `sample_submission.csv` in `data/` (or pass `--data-dir` to any script).
+other library is used. Tested with Python 3.9.25 / NumPy 1.23.1 (the course's
+grading environment) and Python 3.14 / NumPy 2.4.6; both write the same submission
+file. Put the course files `x_train.csv`, `y_train.csv`, `x_test.csv` and
+`sample_submission.csv` in `data/` (or pass `--data-dir` to any script).
 
 ## Reproduce the submission
 
@@ -24,7 +26,9 @@ This fits the final model on all 328,135 training rows and writes
 5-fold cross-validation as the experiments to pick the F1 cutoff (0.20);
 `python run.py --threshold 0.20` skips that step and gives the same file. Before
 finishing, it reads the file back and checks the header, the -1/+1 values and that
-the IDs match `x_test.csv` and `sample_submission.csv`.
+the IDs match `x_test.csv` and `sample_submission.csv`. On a clean checkout of
+`main`, the file it writes is byte-identical to our best AIcrowd submission
+(F1 0.436).
 
 ## Reproduce the experiments
 
@@ -53,6 +57,10 @@ Table I of the report uses. The experiment names follow the report: E0 baselines
 E1 the six required methods, E2-E5 preprocessing and feature choices, E6 class
 imbalance, E7 hyperparameters, E8 non-linear features, E9 post-diagnosis questions.
 Running all of them takes about 40 minutes.
+
+Each row records the settings, the cross-validated scores and, for submitted
+models, the AIcrowd F1. `run.py` on `main` reproduces the E1-logistic row
+(CV F1 0.4274 ± 0.0028, cutoff 0.20).
 
 ## Code layout
 

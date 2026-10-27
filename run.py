@@ -83,11 +83,15 @@ def check_submission(path, test_ids, sample_path=None):
         raise ValueError(f"The IDs in {path} are not the x_test IDs in order.")
     if {r[1] for r in rows[1:]} - {"-1", "1"}:
         raise ValueError(f"{path} has predictions other than -1 and 1.")
-    if sample_path is not None and Path(sample_path).exists():
-        with open(sample_path, newline="") as handle:
-            sample_ids = [int(r[0]) for r in list(csv.reader(handle))[1:]]
-        if ids != sample_ids:
-            raise ValueError(f"The IDs in {path} differ from {sample_path}.")
+    if sample_path is None:
+        return
+    if not Path(sample_path).exists():
+        print(f"{sample_path} not found: IDs checked against x_test only.")
+        return
+    with open(sample_path, newline="") as handle:
+        sample_ids = [int(r[0]) for r in list(csv.reader(handle))[1:]]
+    if ids != sample_ids:
+        raise ValueError(f"The IDs in {path} differ from {sample_path}.")
 
 
 def main(argv=None):
