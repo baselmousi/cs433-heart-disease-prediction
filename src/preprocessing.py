@@ -256,7 +256,8 @@ def fit_preprocessor(
 ):
     """Learn every preprocessing statistic from the training rows x only.
 
-    Defaults are the choices made in notebooks/02_feature_selection.ipynb.
+    Defaults are the choices made in notebooks/02_feature_selection.ipynb and the
+    experiments listed in notebooks/README.md.
     - max_nan: drop SPEC features with a larger NaN fraction after cleaning.
     - indicators: add a 0/1 missing indicator to numeric features with >= 1 % NaN.
     - ordinal_onehot: one-hot encode ordinal features instead of keeping them numeric.

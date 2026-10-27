@@ -68,7 +68,7 @@ Running all of them takes about 40 minutes.
 | `src/metrics.py` | Precision, recall, F1, cutoff search, stable sigmoid |
 | `helpers.py` | Course-provided CSV helpers |
 | `train_baseline.py` | The first five-feature logistic baseline (`results/baseline/`) |
-| `notebooks/` | Data exploration and the feature-by-feature decisions behind `feature_spec.py` |
+| `notebooks/` | Data exploration and the feature-by-feature decisions behind `feature_spec.py`; start with its README |
 | `tests/` | Unit tests |
 
 ## Preprocessing in short
@@ -83,6 +83,10 @@ continuous ones clipped to their 0.5-99.5 % training quantiles; missing values g
 the training median, and every column is standardized. Nominal features are one-hot
 encoded with "missing" as a level of its own and the most frequent level as the
 reference. All statistics come from the training rows of each fold.
+
+[`notebooks/README.md`](notebooks/README.md) explains every step: what the data
+looks like, where each of the 321 columns went and why, the evidence for each
+decision in the notebooks, and the experiments that tested the uncertain ones.
 
 ## Tests
 

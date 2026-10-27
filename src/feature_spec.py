@@ -7,7 +7,7 @@ Every one of the 321 features ends up in exactly one place:
 - ``LEAKY``: follow-up questions asked only because of a heart condition. Dropped by
   default; the leakage experiment (E9) adds them back.
 - Anything else is an optional-module question with >= 90 % NaN, dropped by
-  ``MODULE_NAN_THRESHOLD`` (checked in notebooks/02_feature_decisions.ipynb).
+  ``MODULE_NAN_THRESHOLD`` (checked in notebooks/02_feature_selection.ipynb).
 
 Each ``SPEC`` entry is ``(kind, missing_codes, remap)``:
 
