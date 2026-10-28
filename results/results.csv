@@ -46,3 +46,4 @@ date,owner,experiment,model,params,preprocessing,columns,threshold,f1_mean,f1_st
 2026-10-27 21:51,Basel Mousi,E7-fraction-0.1,subsampled-logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200, 'fraction': 0.1}",{},200,0.2,0.4184,0.0033,0.4184,0.3448,0.5318,0.8694,13,
 2026-10-27 21:52,Basel Mousi,E7-fraction-0.25,subsampled-logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200, 'fraction': 0.25}",{},200,0.2,0.4242,0.0016,0.4242,0.3497,0.5388,0.8708,21,
 2026-10-27 21:52,Basel Mousi,E7-fraction-0.5,subsampled-logistic,"{'lambda_': 0.0001, 'gamma': 1.0, 'max_iters': 200, 'fraction': 0.5}",{},200,0.2,0.4261,0.0028,0.4261,0.3519,0.5399,0.8716,29,
+2026-10-28 22:05,Basel Mousi,E0-majority,majority,{},{},200,0.05,0.0,0.0,0.0,0.0,0.0,0.9117,11,
