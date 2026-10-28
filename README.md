@@ -51,6 +51,9 @@ refitting:
 python compare_cv.py E1-logistic E3-indicators E9-leaky
 ```
 
+The `.npz` files are not committed (they are listed in `.gitignore`), so on a fresh
+clone run the experiments you want to compare with `run_cv.py` first.
+
 `compare_cv.py` compares every run with the first one fold by fold (a paired
 comparison with the Nadeau-Bengio corrected t-test) and gives the verdict that
 Table I of the report uses. The experiment names follow the report: E0 baselines,
