@@ -8,43 +8,77 @@ Implementations of the six required methods for CS-433 Project 1
 - For least squares, you are allowed to use everything from numpy.linalg but not numpy.linalg.lstsq.
 - All vectors should be implemented as 1D arrays
 with shape (X,) instead of (X, 1).
+
+Shared arguments: y is the (N,) target vector (0/1 labels for the logistic methods),
+tx the (N, D) feature matrix including the intercept column, and w a (D,) weight
+vector. Every method returns (w, loss): the last weights and the loss at those weights,
+without the penalty term for the regularized methods.
 """
 
 import numpy as np
 
 
 def compute_mse(y, tx, w):
-    """Compute the mean squared error."""
+    """Compute the mean squared error with the lecture's factor 1/2.
+
+    Returns:
+        float: 1/(2N) * sum of (y - tx w)^2.
+    """
     e = y - tx @ w
     mse = 0.5 * np.mean(e**2)
     return mse
 
 
 def mean_squared_error_gd(y, tx, initial_w, max_iters, gamma):
-    """Linear regression using gradient descent"""
+    """Linear regression using full-batch gradient descent on the MSE.
+
+    Args:
+        y, tx, initial_w: see the module docstring.
+        max_iters (int): number of gradient steps.
+        gamma (float): step size.
+
+    Returns:
+        tuple: (w, loss), the last weights and their MSE.
+    """
     w = initial_w
-    for n in range(max_iters):
+    for _ in range(max_iters):
         e = y - tx @ w
-        gradient = -tx.T @ e / len(y)
+        gradient = -tx.T @ e / len(y)  # gradient of the MSE
         w = w - gamma * gradient
     loss = compute_mse(y, tx, w)
     return w, loss
 
 
 def mean_squared_error_sgd(y, tx, initial_w, max_iters, gamma):
-    """Linear regression using stochastic gradient descent"""
+    """Linear regression using stochastic gradient descent on the MSE.
+
+    Each step uses one row drawn uniformly at random (mini-batch size 1), so the
+    result depends on NumPy's global random state.
+
+    Args:
+        y, tx, initial_w: see the module docstring.
+        max_iters (int): number of single-row steps.
+        gamma (float): step size.
+
+    Returns:
+        tuple: (w, loss), the last weights and their MSE on all rows.
+    """
     w = initial_w
-    for n in range(max_iters):
-        n = np.random.randint(len(y))
-        e = y[n] - tx[n] @ w
-        gradient = -tx[n].T * e
+    for _ in range(max_iters):
+        i = np.random.randint(len(y))
+        e = y[i] - tx[i] @ w
+        gradient = -tx[i] * e  # gradient of the squared error of row i
         w = w - gamma * gradient
     loss = compute_mse(y, tx, w)
     return w, loss
 
 
 def least_squares(y, tx):
-    """Least squares regression using normal equations"""
+    """Least squares regression by solving the normal equations tx^T tx w = tx^T y.
+
+    Returns:
+        tuple: (w, loss), the exact minimizer and its MSE.
+    """
     a = tx.T @ tx
     b = tx.T @ y
     w = np.linalg.solve(a, b)
@@ -53,10 +87,19 @@ def least_squares(y, tx):
 
 
 def ridge_regression(y, tx, lambda_):
-    """Ridge regression using normal equations"""
-    aI = 2 * tx.shape[0] * lambda_ * np.identity(tx.shape[1])
-    a = tx.T.dot(tx) + aI
-    b = tx.T.dot(y)
+    """Ridge regression by solving (tx^T tx + 2 N lambda_ I) w = tx^T y.
+
+    This minimizes MSE(w) + lambda_ * ||w||^2 (the intercept is penalized too).
+
+    Args:
+        lambda_ (float): regularization strength.
+
+    Returns:
+        tuple: (w, loss), the minimizer and its MSE without the penalty.
+    """
+    penalty = 2 * tx.shape[0] * lambda_ * np.identity(tx.shape[1])
+    a = tx.T @ tx + penalty
+    b = tx.T @ y
     w = np.linalg.solve(a, b)
     loss = compute_mse(y, tx, w)
     return w, loss
@@ -79,9 +122,19 @@ def _logistic_loss(y, tx, w):
 
 
 def logistic_regression(y, tx, initial_w, max_iters, gamma):
-    """Logistic regression using gradient descent"""
+    """Logistic regression using full-batch gradient descent.
+
+    Args:
+        y (np.ndarray): (N,) labels in {0, 1}.
+        tx, initial_w: see the module docstring.
+        max_iters (int): number of gradient steps.
+        gamma (float): step size.
+
+    Returns:
+        tuple: (w, loss), the last weights and their mean negative log likelihood.
+    """
     w = initial_w
-    for n in range(max_iters):
+    for _ in range(max_iters):
         gradient = (1 / y.shape[0]) * tx.T @ (_sigmoid(tx @ w) - y)
         w = w - gamma * gradient
     loss = _logistic_loss(y, tx, w)
@@ -89,9 +142,23 @@ def logistic_regression(y, tx, initial_w, max_iters, gamma):
 
 
 def reg_logistic_regression(y, tx, lambda_, initial_w, max_iters, gamma):
-    """Regularized logistic regression using gradient descent"""
+    """L2-regularized logistic regression using full-batch gradient descent.
+
+    Minimizes the mean negative log likelihood + lambda_ * ||w||^2.
+
+    Args:
+        y (np.ndarray): (N,) labels in {0, 1}.
+        lambda_ (float): regularization strength.
+        tx, initial_w: see the module docstring.
+        max_iters (int): number of gradient steps.
+        gamma (float): step size.
+
+    Returns:
+        tuple: (w, loss), the last weights and their mean negative log likelihood
+        without the penalty.
+    """
     w = initial_w
-    for n in range(max_iters):
+    for _ in range(max_iters):
         gradient = (1 / y.shape[0]) * tx.T @ (_sigmoid(tx @ w) - y) + 2 * lambda_ * w
         w = w - gamma * gradient
     loss = _logistic_loss(y, tx, w)
